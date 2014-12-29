@@ -99,6 +99,7 @@ class TextRenderer(Gtk.CellRendererText):
 
         self.props.font_desc = Pango.FontDescription('sans 16')
         self.props.wrap_width = screen.get_width()
+        self.props.wrap_mode = Pango.WrapMode.WORD_CHAR
 
         self._invoker = CellRendererInvoker()
         self._invoker.attach_cell_renderer(tree_view, self)
