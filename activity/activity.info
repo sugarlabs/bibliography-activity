@@ -1,0 +1,7 @@
+[Activity]
+name = Bibliography
+bundle_id = org.sugarlabs.BibliographyActivity
+icon = activity-helloworld
+exec = sugar-activity activity.BibliographyActivity
+activity_version = 1
+show_launcher = yes
