@@ -75,6 +75,14 @@ class BibliographyActivity(activity.Activity):
         self._main_list = MainList()
         self._main_list.connect('edit-row', self.__edit_row_cb)
         self._main_list.connect('deleted-row', self.__deleted_row_cb)
+        self._main_sw = Gtk.ScrolledWindow()
+        self._main_sw.set_policy(Gtk.PolicyType.NEVER,
+                                 Gtk.PolicyType.ALWAYS)
+        self._main_sw.set_shadow_type(Gtk.ShadowType.NONE)
+        self._main_sw.connect('key-press-event',
+                              self.__key_press_event_cb)
+        self._main_sw.add(self._main_list)
+        self._main_list.show()
 
         self._empty_message = EmptyMessage()
 
@@ -87,7 +95,8 @@ class BibliographyActivity(activity.Activity):
     def add_item(self, text, type_, data):
         self._empty_message.hide()
         self._overlay.remove(self._overlay.get_child())
-        self._overlay.add(self._main_list)
+        self._overlay.add(self._main_sw)
+        self._main_sw.show()
         self._main_list.show()
         self._main_list.add(text, type_, data)
         
@@ -116,6 +125,22 @@ class BibliographyActivity(activity.Activity):
             self._overlay.add(self._empty_message)
             self._empty_message.show()
 
+    def __key_press_event_cb(self, scrolled_window, event):
+        keyname = Gdk.keyval_name(event.keyval)
+
+        vadjustment = scrolled_window.props.vadjustment
+        if keyname == 'Up':
+            if vadjustment.props.value > vadjustment.props.lower:
+                vadjustment.props.value -= vadjustment.props.step_increment
+        elif keyname == 'Down':
+            max_value = vadjustment.props.upper - vadjustment.props.page_size
+            if vadjustment.props.value < max_value:
+                vadjustment.props.value = min(
+                    vadjustment.props.value + vadjustment.props.step_increment,
+                    max_value)
+        else:
+            return False
+
     def write_file(self, file_path):
         data = self._main_list.json()
         with open(file_path, 'w') as f:
@@ -136,7 +161,8 @@ class BibliographyActivity(activity.Activity):
             self._main_list.load_json(l)
             self._empty_message.hide()
             self._overlay.remove(self._empty_message)
-            self._overlay.add(self._main_list)
+            self._overlay.add(self._main_sw)
+            self._main_sw.show()
             self._main_list.show()
 
 
