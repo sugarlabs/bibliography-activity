@@ -117,7 +117,7 @@ BibType(_('eBook without Author'),
             '<i>{}</i> {}, {} edn, {}, {}, accessed {}, &lt;{}&gt;',
             2))
 
-BibType(_('Electornic Encyclopedia'),
+BibType(_('Electronic Encyclopedia'),
         _('Title of Article:Earthquake | Year of Publication:2013 |'
           'Title of Encyclopedia:Encyclopaedia Britannica |'
           'Accessed:*datenow | URL:http://www.school.eb.com.au/all/comptons/'
