@@ -14,15 +14,21 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import os
+import time
 import json
 import logging
 from gettext import gettext as _
 
+import dbus
 from gi.repository import Gtk
 from gi.repository import Gdk
 from gi.repository import Pango
 
 from sugar3.activity import activity
+from sugar3.datastore import datastore
+from sugar3.graphics.alert import Alert
+from sugar3.graphics.toolbutton import ToolButton
 from sugar3.graphics.toolbarbox import ToolbarBox
 from sugar3.activity.widgets import ActivityToolbarButton
 from sugar3.activity.widgets import StopButton
@@ -53,6 +59,12 @@ class BibliographyActivity(activity.Activity):
         activity_button = ActivityToolbarButton(self)
         toolbar_box.toolbar.insert(activity_button, 0)
         activity_button.show()
+
+        html = ToolButton('export-as-html')
+        html.set_tooltip(_('Save as HTML'))
+        html.connect('clicked', self.__export_as_html_cb)
+        activity_button.props.page.insert(html, -1)
+        html.show()
         
         add_button = AddToolButton(ALL_TYPE_NAMES)
         add_button.connect('add-type', self.__add_type_cb)
@@ -141,8 +153,67 @@ class BibliographyActivity(activity.Activity):
         else:
             return False
 
+    def __export_as_html_cb(self, button):
+        jobject = datastore.create()
+        jobject.metadata['title'] = \
+            _('{} as HTML').format(self.metadata['title'])
+        jobject.metadata['mime_type'] = 'text/html'
+        preview = self.get_preview()
+        if preview is not None:
+            jobject.metadata['preview'] = dbus.ByteArray(preview)
+
+        # write out the document contents in the requested format
+        path = os.path.join(self.get_activity_root(),
+                            'instance', str(time.time()))
+        with open(path, 'w') as f:
+            f.write('''<html>
+                         <head>
+                           <title>{title}</title>
+                         </head>
+
+                         <body>
+                           <h1>{title}</h1>
+                    '''.format(title=jobject.metadata['title']))
+            for item in self._main_list.all():
+                f.write('<p>{}</p>'.format(
+                    item[self._main_list.COLUMN_TEXT]))
+            f.write('''
+                         </body>
+                       </html>
+                    ''')
+        jobject.file_path = path
+
+        datastore.write(jobject, transfer_ownership=True)
+        self._journal_alert(jobject.object_id, _('Success'), _('Your'
+                            ' Bibliography was saved to the journal as HTML'))
+        jobject.destroy()
+        del jobject
+
+    def _journal_alert(self, object_id, title, msg):
+        alert = Alert()
+        alert.props.title = title
+        alert.props.msg = msg
+        alert.add_button(Gtk.ResponseType.APPLY,
+                         _('Show in Journal'),
+                         Icon(icon_name='zoom-activity'))
+        alert.add_button(Gtk.ResponseType.OK, _('Ok'),
+                         Icon(icon_name='dialog-ok'))
+
+        # Remove other alerts
+        for alert in self._alerts:
+            self.remove_alert(alert)
+
+        self.add_alert(alert)
+        alert.connect('response', self.__alert_response_cb, object_id)
+        alert.show_all()
+
+    def __alert_response_cb(self, alert, response_id, object_id):
+        if response_id is Gtk.ResponseType.APPLY:
+            activity.show_object_in_journal(object_id)
+        self.remove_alert(alert)
+
     def write_file(self, file_path):
-        data = self._main_list.json()
+        data = self._main_list.all()
         with open(file_path, 'w') as f:
             json.dump(data, f)
 

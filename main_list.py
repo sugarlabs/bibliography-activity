@@ -52,7 +52,7 @@ class MainList(Gtk.TreeView):
     def add(self, text, type_, data):
         self._store.append([text, type_, data])
 
-    def json(self):
+    def all(self):
         return [row[:] for row in self._store]
 
     def load_json(self, list_):
