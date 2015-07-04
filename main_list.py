@@ -9,7 +9,13 @@ from gi.repository import GObject
 
 from sugar3.graphics.palette import Palette
 from sugar3.graphics.menuitem import MenuItem
-from sugar3.graphics.palette import CellRendererInvoker
+try:
+    NEW_INVOKER = True
+    from sugar3.graphics.palette import TreeViewInvoker
+except ImportError:
+    NEW_INVOKER = False
+    from sugar3.graphics.palette import CellRendererInvoker
+
 
 class MainList(Gtk.TreeView):
     '''
@@ -44,9 +50,13 @@ class MainList(Gtk.TreeView):
         self.props.rules_hint = True
 
         renderer = TextRenderer(self)
-        column = Gtk.TreeViewColumn('Bibliography', renderer, markup=0)  
+        column = Gtk.TreeViewColumn('Bibliography', renderer, markup=0)
         self.append_column(column)
-    
+
+        if NEW_INVOKER:
+            self._invoker = TreeViewInvoker()
+            self._invoker.attach_treeview(self)
+
         self._editing_iter = None
 
     def add(self, text, type_, data):
@@ -88,7 +98,11 @@ class MainList(Gtk.TreeView):
                 self._store.remove(row.iter)
                 self.emit('deleted-row', *delete_row)
                 return
-            
+
+    def create_palette(self, path, column):
+        row = list(self.get_model()[path])
+        return ItemPalette(row, self)
+
 
 class TextRenderer(Gtk.CellRendererText):
 
@@ -101,8 +115,9 @@ class TextRenderer(Gtk.CellRendererText):
         self.props.wrap_width = screen.get_width()
         self.props.wrap_mode = Pango.WrapMode.WORD_CHAR
 
-        self._invoker = CellRendererInvoker()
-        self._invoker.attach_cell_renderer(tree_view, self)
+        if not NEW_INVOKER:
+            self._invoker = CellRendererInvoker()
+            self._invoker.attach_cell_renderer(tree_view, self)
 
     def create_palette(self):
         model = self._tree_view.get_model()
