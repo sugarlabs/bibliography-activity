@@ -8,7 +8,8 @@ from gi.repository import Pango
 from gi.repository import GObject
 
 from sugar3.graphics.palette import Palette
-from sugar3.graphics.menuitem import MenuItem
+from sugar3.graphics.palettemenu import PaletteMenuBox
+from sugar3.graphics.palettemenu import PaletteMenuItem
 try:
     NEW_INVOKER = True
     from sugar3.graphics.palette import TreeViewInvoker
@@ -129,12 +130,16 @@ class ItemPalette(Palette):
     def __init__(self, row, tree_view):
         Palette.__init__(self, primary_text=row[MainList.COLUMN_TYPE])
 
-        menu_item = MenuItem(_('Edit'), 'toolbar-edit')
+        box = PaletteMenuBox()
+        self.set_content(box)
+        box.show()
+
+        menu_item = PaletteMenuItem(_('Edit'), icon_name='toolbar-edit')
         menu_item.connect('activate', lambda *args: tree_view.edit(row))
-        self.menu.append(menu_item)
+        box.append_item(menu_item)
         menu_item.show()
 
-        menu_item = MenuItem(_('Delete'), 'edit-delete')
+        menu_item = PaletteMenuItem(_('Delete'), icon_name='edit-delete')
         menu_item.connect('activate', lambda *args: tree_view.delete(row))
-        self.menu.append(menu_item)
+        box.append_item(menu_item)
         menu_item.show()
