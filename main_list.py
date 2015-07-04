@@ -13,6 +13,7 @@ from sugar3.graphics.palettemenu import PaletteMenuItem
 try:
     NEW_INVOKER = True
     from sugar3.graphics.palette import TreeViewInvoker
+    from sugar3.graphics.scrollingdetector import ScrollingDetector
 except ImportError:
     NEW_INVOKER = False
     from sugar3.graphics.palette import CellRendererInvoker
@@ -37,28 +38,37 @@ class MainList(Gtk.TreeView):
     COLUMN_TYPE = 1
     COLUMN_DATA = 2
 
-    def __init__(self):
+    def __init__(self, scrolled_window):
         self._store = Gtk.ListStore(str, str, str)
 
         self._sort = Gtk.TreeModelSort(self._store)
         self._store.set_sort_column_id(self.COLUMN_TEXT,
-                                        Gtk.SortType.ASCENDING)
+                                       Gtk.SortType.ASCENDING)
         Gtk.TreeView.__init__(self, self._sort)
-
-        self.get_style_context().add_class('main-list')
 
         self.props.headers_visible = False
         self.props.rules_hint = True
 
         renderer = TextRenderer(self)
         column = Gtk.TreeViewColumn('Bibliography', renderer, markup=0)
+        column.props.max_width = 0
         self.append_column(column)
 
         if NEW_INVOKER:
             self._invoker = TreeViewInvoker()
             self._invoker.attach_treeview(self)
 
+            scrolld = ScrollingDetector(scrolled_window)
+            scrolld.connect('scroll-start', self.__scroll_start_cb)
+            scrolld.connect('scroll-end', self.__scroll_end_cb)
+
         self._editing_iter = None
+
+    def __scroll_start_cb(self, event):
+        self._invoker.detach()
+
+    def __scroll_end_cb(self, event):
+        self._invoker.attach_treeview(self)
 
     def add(self, text, type_, data):
         self._store.append([text, type_, data])

@@ -83,16 +83,16 @@ class BibliographyActivity(activity.Activity):
 
         self.set_toolbar_box(toolbar_box)
         toolbar_box.show()
-        
-        self._main_list = MainList()
-        self._main_list.connect('edit-row', self.__edit_row_cb)
-        self._main_list.connect('deleted-row', self.__deleted_row_cb)
+
         self._main_sw = Gtk.ScrolledWindow()
         self._main_sw.set_policy(Gtk.PolicyType.NEVER,
                                  Gtk.PolicyType.ALWAYS)
-        self._main_sw.set_shadow_type(Gtk.ShadowType.NONE)
         self._main_sw.connect('key-press-event',
                               self.__key_press_event_cb)
+
+        self._main_list = MainList(self._main_sw)
+        self._main_list.connect('edit-row', self.__edit_row_cb)
+        self._main_list.connect('deleted-row', self.__deleted_row_cb)
         self._main_sw.add(self._main_list)
         self._main_list.show()
 
