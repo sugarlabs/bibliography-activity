@@ -70,7 +70,13 @@ class BibliographyActivity(activity.Activity):
         html.connect('clicked', self.__export_as_html_cb)
         activity_button.props.page.insert(html, -1)
         html.show()
-        
+
+        abiword = ToolButton('export-as-abiword')
+        abiword.set_tooltip(_('Save as a Write document'))
+        abiword.connect('clicked', self.__export_as_abiword_cb)
+        activity_button.props.page.insert(abiword, -1)
+        abiword.show()
+
         add_button = AddToolButton(ALL_TYPE_NAMES)
         add_button.connect('add-type', self.__add_type_cb)
         toolbar_box.toolbar.insert(add_button, -1)
@@ -191,6 +197,40 @@ class BibliographyActivity(activity.Activity):
         datastore.write(jobject, transfer_ownership=True)
         self._journal_alert(jobject.object_id, _('Success'), _('Your'
                             ' Bibliography was saved to the journal as HTML'))
+        jobject.destroy()
+        del jobject
+
+    def __export_as_abiword_cb(self, button):
+        jobject = datastore.create()
+        jobject.metadata['title'] = \
+            _('{} as Write document').format(self.metadata['title'])
+        jobject.metadata['mime_type'] = 'application/x-abiword'
+        preview = self.get_preview()
+        if preview is not None:
+            jobject.metadata['preview'] = dbus.ByteArray(preview)
+
+        path = os.path.join(self.get_activity_root(),
+                            'instance', str(time.time()))
+        with open(path, 'w') as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?>\n<abiword>\n'
+                    '<section>')
+            entries = []
+            for item in self._main_list.all():
+                markup = item[self._main_list.COLUMN_TEXT]
+                abiword = '<p><c>{}</c></p>'.format(markup) \
+                    .replace('<b>', '<c props="font-weight:bold">') \
+                    .replace('<i>', '<c props="font-style:italic;'
+                             ' font-weight:normal">') \
+                    .replace('</b>', '</c>').replace('</i>', '</c>')
+                entries.append(abiword)
+            f.write('\n<p><c></c></p>\n'.join(entries))
+            f.write('</section>\n</abiword>')
+        jobject.file_path = path
+
+        datastore.write(jobject, transfer_ownership=True)
+        self._journal_alert(jobject.object_id, _('Success'), _('Your'
+                            ' Bibliography was saved to the journal as a Write'
+                            ' document'))
         jobject.destroy()
         del jobject
 
