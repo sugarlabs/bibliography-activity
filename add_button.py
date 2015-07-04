@@ -21,6 +21,7 @@ from gi.repository import GObject
 from gettext import gettext as _
 
 from sugar3.graphics.toolbutton import ToolButton
+from sugar3.graphics.iconentry import IconEntry, ICON_ENTRY_PRIMARY
 from sugar3.graphics import style
 
 
@@ -37,12 +38,13 @@ class AddToolButton(ToolButton):
         self.palette_invoker.props.toggle_palette = True
         self.palette_invoker.props.lock_palette = True
         self._p = self.get_palette()
-        
-        self._search_box = Gtk.Entry()
-        self._search_box.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY,
-                                                 'system-search')
+
+        self._search_box = IconEntry()
+        self._search_box.add_clear_button()
+        self._search_box.set_icon_from_name(
+            ICON_ENTRY_PRIMARY, 'system-search')
         self._search_box.show()
-        
+
         types_store = Gtk.ListStore(str)
         for i in types:
             types_store.append([i])
