@@ -35,6 +35,11 @@ from sugar3.activity.widgets import StopButton
 from sugar3.graphics import style
 from sugar3.graphics.icon import Icon
 
+try:
+    from sugar3.activity.activity import get_bundle, launch_bundle
+except ImportError:
+    get_bundle = lambda **kwargs: None
+
 from add_button import AddToolButton
 from add_window import EntryWindow
 from bib_types import ALL_TYPES, ALL_TYPE_NAMES
@@ -193,9 +198,16 @@ class BibliographyActivity(activity.Activity):
         alert = Alert()
         alert.props.title = title
         alert.props.msg = msg
-        alert.add_button(Gtk.ResponseType.APPLY,
-                         _('Show in Journal'),
-                         Icon(icon_name='zoom-activity'))
+
+        bundle = get_bundle(object_id=object_id)
+        if bundle is not None:
+            alert.add_button(Gtk.ResponseType.ACCEPT,
+                             _('Open with {}').format(bundle.get_name()),
+                             Icon(file=bundle.get_icon()))
+        else:
+            alert.add_button(Gtk.ResponseType.APPLY,
+                             _('Show in Journal'),
+                             Icon(icon_name='zoom-activity'))
         alert.add_button(Gtk.ResponseType.OK, _('Ok'),
                          Icon(icon_name='dialog-ok'))
 
@@ -208,6 +220,8 @@ class BibliographyActivity(activity.Activity):
         alert.show_all()
 
     def __alert_response_cb(self, alert, response_id, object_id):
+        if response_id is Gtk.ResponseType.ACCEPT:
+            launch_bundle(object_id=object_id)
         if response_id is Gtk.ResponseType.APPLY:
             activity.show_object_in_journal(object_id)
         self.remove_alert(alert)
