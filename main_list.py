@@ -128,7 +128,7 @@ class TextRenderer(Gtk.CellRendererText):
 class ItemPalette(Palette):
 
     def __init__(self, row, tree_view):
-        Palette.__init__(self, primary_text=row[MainList.COLUMN_TYPE])
+        Palette.__init__(self, primary_text=_(row[MainList.COLUMN_TYPE]))
 
         box = PaletteMenuBox()
         self.set_content(box)

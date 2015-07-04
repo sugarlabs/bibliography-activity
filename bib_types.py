@@ -23,7 +23,8 @@ ALL_TYPE_NAMES = []
 
 class BibType(object):
 
-    def __init__(self, name, items, format_func):
+    def __init__(self, type, name, items, format_func):
+        self.type = type
         self.name = name
         self.format = format_func
 
@@ -53,22 +54,22 @@ def basic_format(format_string):
 # Books with more than 2 authors
 # CD recordings
 
-BibType(_('Book'),
+BibType('Book', _('Book'),
         _('Last Name:Shoup | First Name Initial:K | Year of Publication:2008 |'
           'Title:Reuse your refuse | Publisher:Wiley |'
           'Place of Publication:Hoboken, N.J'),
         basic_format('{}, {} {}, <i>{}</i>, {}, {}'))
-BibType(_('Book with 2 Authors'),
+BibType('Book with 2 Authors', _('Book with 2 Authors'),
         _('Author 1 Last Name:Fiell | Author 1 First Name Initial:C |'
           'Author 2 Last Name:Fiell | Author 2 First Name Initial:P |'
           'Year of Publication:2005 | Title:Graphic design now |'
           'Publisher:Taschen | Place of Publication:London'),
         basic_format('{}, {} &amp; {}, {} {}, <i>{}</i>, {}, {}'))
-BibType(_('Book without Author'),
+BibType('Book without Author', _('Book without Author'),
         _('Title:Rome | Year of Publication:2008 |'
           'Publisher:Dorling Kindersley | Place of Publication:London'),
         basic_format('<i>{}</i> {}, {}, {}'))
-BibType(_('Book with Editor'),
+BibType('Book with Editor', _('Book with Editor'),
         _('Editor Last Name:West | Editor First Name Initial:S |'
           'Year of Publication:2005 | Title:Guide to art |'
           'Publisher:Bloomsbury | Place of Publication:London'),
@@ -84,7 +85,7 @@ def ebook_format(without_edition, with_edition, index):
             return without_edition.format(*values)
     return closure
 
-BibType(_('eBook'),
+BibType('eBook', _('eBook'),
         _('Last Name:Sachar | First Name Initial:L |'
           'Year of Publication:2010 | Edition (if applicable): | Title:Holes |'
           'Publisher:Bloomsbury Publishing | Place of Publication:London |'
@@ -93,7 +94,7 @@ BibType(_('eBook'),
         ebook_format('{}, {} {}, <i>{}</i>, {}, {}, accessed {}, &lt;{}&gt;',
             '{}, {} {}, {} edn, <i>{}</i>, {}, {}, accessed {}, &lt;{}&gt;',
             3))
-BibType(_('eBook with 2 Authors'),
+BibType('eBook with 2 Authors', _('eBook with 2 Authors'),
         _('Author 1 Last Name:Sharpley | Author 1 First Name Initial:R |'
           'Author 2 Last Name:Telfer | Author 2 First Name Initial:D |'
           'Year of Publication:2002 | Edition (if applicable): | '
@@ -106,7 +107,7 @@ BibType(_('eBook with 2 Authors'),
                      '{}, {} &amp; {}, {} {}, {} edn, <i>{}</i>, {}, {}, '
                      'accessed {}, &lt;{}&gt;',
                      5))
-BibType(_('eBook without Author'),
+BibType('eBook without Author', _('eBook without Author'),
         _('Title: You\'ve got what? | Year of Publication:2009 |'
           'Edition (if applicable):4th |'
           'Publisher:Communicable Disease Control Branch, Department of Health'
@@ -117,13 +118,14 @@ BibType(_('eBook without Author'),
             '<i>{}</i> {}, {} edn, {}, {}, accessed {}, &lt;{}&gt;',
             2))
 
-BibType(_('Electronic Encyclopedia'),
+BibType('Electronic Encyclopedia', _('Electronic Encyclopedia'),
         _('Title of Article:Earthquake | Year of Publication:2013 |'
           'Title of Encyclopedia:Encyclopaedia Britannica |'
           'Accessed:*datenow | URL:http://www.school.eb.com.au/all/comptons/'
           'article-9274104?query=earthquake'),
         basic_format('\'{}\' {}, in <i>{}</i>, accessed {}, &lt;{}&gt;'))
-BibType(_('Printed Encyclopedia with Author'),
+BibType('Printed Encyclopedia with Author',
+        _('Printed Encyclopedia with Author'),
         _('Last Name:Pettus | First Name Initial:A M |'
           'Year of Publication:1998 | Title of Article:Edward Jenne |'
           'Title of Encyclopedia:Biographical encyclopedia of scientists |'
@@ -132,7 +134,8 @@ BibType(_('Printed Encyclopedia with Author'),
           'Starting Page:691 | Finishing Page:693'),
         basic_format('{}, {} {}, \'{}\' in <i>{}</i>, {}, {} '
                      'vol. {}, pp. {}-{}'))
-BibType(_('Printed Encyclopedia without Author'),
+BibType('Printed Encyclopedia without Author',
+        _('Printed Encyclopedia without Author'),
         _('Title of Article:Germany | Year of Publication:2008 |'
           'Title of Encyclopedia:The World Book | Publisher:World Book |'
           'Place of Publication:Chicago | Volume Number:8 |'
@@ -150,7 +153,8 @@ def vid_format(string, volumei, issuei, datei):
         return string.format(*fvalues)
     return closure
 
-BibType(_('Magazine or Journal Article with Author'),
+BibType('Magazine or Journal Article with Author',
+        _('Magazine or Journal Article with Author'),
         _('Last Name:Carter | First Name Initial:R |'
           'Year of Publication:2014 |'
           'Tite of Article:Take Control of Your Dreams |'
@@ -159,7 +163,8 @@ BibType(_('Magazine or Journal Article with Author'),
           'Date of Issue (if applicable):August | Starting Page:37 |'
           'Finishing Page:43'),
         vid_format('{}, {} {} \'{}\', <i>{}</i>,{}{}{} pp. {}-{}', 5, 6, 7))
-BibType(_('Magazine or Journal Article without Author'),
+BibType('Magazine or Journal Article without Author',
+        _('Magazine or Journal Article without Author'),
         _('Tite of Article:Appliances of Science | Year of Publication:2014 |'
           'Title of Magazine:BBC Focus | Volume (if applicable): |'
           'Issue (if applicable):271 |'
@@ -167,7 +172,8 @@ BibType(_('Magazine or Journal Article without Author'),
           'Finishing Page:87'),
         vid_format('{}, {} {} \'{}\', <i>{}</i>,{}{}{} pp. {}-{}', 3, 4, 5))
 
-BibType(_('Online Magazine or Journal Article with Author'),
+BibType('Online Magazine or Journal Article with Author',
+        _('Online Magazine or Journal Article with Author'),
         _('Last Name:Keneley | First Name Initial:M |'
           'Year of Publication:2004 | Tite of Article:The dying town syndrome:'
           'a survey of urban development in the Western District of Victoria'
@@ -178,7 +184,8 @@ BibType(_('Online Magazine or Journal Article with Author'),
           'URL:ttp://www.jcu.edu.au/aff/history/articles/keneley3.htm'),
         vid_format('{}, {} {} \'{}\', <i>{}</i>,{}{}{}'
                    ' accessed {}, &lt;{}&gt;', 5, 6, 7))
-BibType(_('Online Magazine or Journal Article without Author'),
+BibType('Online Magazine or Journal Article without Author',
+        _('Online Magazine or Journal Article without Author'),
         _('Tite of Article:Logging off? | Year of Publication:2010 |'
           'Title of Magazine:New Internationalist | Volume (if applicable): |'
           'Issue (if applicable):432 | Date of Issue (if applicable):May |'
@@ -199,7 +206,8 @@ def page_format(string, starti, endi):
         return string.format(*values)
     return closure
 
-BibType(_('Newsaper Article with Author'),
+BibType('Newsaper Article with Author',
+        _('Newsaper Article with Author'),
         _('Last Name:Bourke | First Name Initial:L |'
           'Year of Publication:2014 |'
           'Title of Article:New push to hit online buys with GST |'
@@ -207,14 +215,16 @@ BibType(_('Newsaper Article with Author'),
           'Date of Issue:27 December | Starting Page:1 |'
           'Finishing Page:'),
         page_format('{}, {} {} \'{}\', <i>{}</i>, {}, {}', 6, 7))
-BibType(_('Newsaper Article without Author'),
+BibType('Newsaper Article without Author',
+        _('Newsaper Article without Author'),
         _('Title of Article:Aspirin put to the test | Year of Publication:2005 |'
           'Title of Newspaper:Advertiser |'
           'Date of Issue:18 January | Starting Page:23 |'
           'Finishing Page:'),
         page_format('\'{}\', {}, <i>{}</i>, {}, {}', 4, 5))
 
-BibType(_('Online Newsaper Article with Author'),
+BibType('Online Newsaper Article with Author',
+        _('Online Newsaper Article with Author'),
         _('Last Name:Bourke | First Name Initial:L |'
           'Year of Publication:2014 | Title of Article:AirAsia QZ8501: '
           'Australia joins search for missing AirAsia flight |'
@@ -225,7 +235,8 @@ BibType(_('Online Newsaper Article with Author'),
           '20141229-12exkr.html'),
         basic_format('{}, {} {} \'{}\', <i>{}</i>, {},'
                      ' accessed {}, &lt;{}&gt;'))
-BibType(_('Online Article without Author'),
+BibType('Online Article without Author',
+        _('Online Article without Author'),
         _('Title of Article:Google street view broke privacy law |'
           'Year of Publication:2010 |Title of Newspaper:Advertiser |'
           'Date of Issue:9 July | Accessed:*datenow |'
@@ -241,7 +252,8 @@ def license_format(string, index=-1):
         return string.format(*values)
     return closure
 
-BibType(_('Image with Creator (Real Name)'),
+BibType('Image with Creator (Real Name)',
+        _('Image with Creator (Real Name)'),
         _('Last Name:Ganguly | First Name Initial:B | Year Created:2010 |'
           'Title or Description:Chicken Egg without Eggshell | Format:Photo |'
           'Sponsor or Orginisation:Wikimedia Commons | Accessed:*datenow |'
@@ -251,7 +263,8 @@ BibType(_('Image with Creator (Real Name)'),
           'Commons:GNU_Free_Documentation_License,_version_1.2'),
         license_format('{}, {} {}, <i>{}</i>, {}, {},'
                        ' accessed {}, &lt;{}&gt;{}'))
-BibType(_('Image with Creator (Screen Name)'),
+BibType('Image with Creator (Screen Name)',
+        _('Image with Creator (Screen Name)'),
         _('Screen Name or User Name:Dschwen | Year Created:2009 |'
           'Title or Description:Looking north from Chicago \'L\' station |'
           'Format:Photo | Sponsor or Orginisation:Wikimedia Commons |'
@@ -259,7 +272,7 @@ BibType(_('Image with Creator (Screen Name)'),
           'CTA_Night.jpg | License URL (if available):http://creativecommons.'
           'org/licenses/by-sa/4.0/deed.en'),
         license_format('{} {}, <i>{}</i>, {}, {}, accessed {}, &lt;{}&gt;{}'))
-BibType(_('Image without Creator'),
+BibType('Image without Creator', _('Image without Creator'),
         _('Title or Description:OLPC XO Laptop with Screen Twisted |'
           'Year Created:n.d. | Format:Photo |'
           'Sponsor or Orginisation:One Laptop Per Child |'
@@ -267,19 +280,19 @@ BibType(_('Image without Creator'),
           'hardware-left-side-view.png | License URL (if available):'),
         license_format('<i>{}</i> {}, {}, {}, accessed {}, &lt;{}&gt;{}'))
 
-BibType(_('Website with Author'),
+BibType('Website with Author', _('Website with Author'),
         _('Last Name:Lesinski | First Name Initial:K | Last Update:2014 |'
           'Title of Webpage:MozJPEG 3.0 |'
           'Sponsor or Orginisation:Performance Calendar | Accessed:*datenow |'
           'URL:http://calendar.perfplanet.com/2014/mozjpeg-3-0/'),
         basic_format('{}, {} {}, <i>{}</i>, {}, accessed {}, &lt;{}&gt;'))
-BibType(_('Website by Organisation'),
+BibType('Website by Organisation', _('Website by Organisation'),
         _('Name of Organisation:Sugar Labs | Last Update:2010 |'
           'Title of Webpage:Sugar Labs-learning software for children |'
           'Sponsor or Orginisation:Sugar Labs |'
           'Accessed:*datenow | URL:http://sugarlabs.org/'),
         basic_format('{} {}, <i>{}</i>, {}, accessed {}, &lt;{}&gt;'))
-BibType(_('Website without Author'),
+BibType('Website without Author', _('Website without Author'),
         _('Title of Webpage:Avocado Jackpot | Year Created:2014 |'
           'Sponsor or Orginisation:Reddit | Accessed:*datenow |'
           'URL:http://www.reddit.com/r/food/comments/2qnbpc/avocado_jackpot/'),
@@ -292,18 +305,19 @@ def place_format(string, index):
         return string.format(*values)
     return closure
 
-BibType(_('Film'),
+BibType('Film', _('Film'),
         _('Title:Toy Story 2 | Year Created:1999 | Format:DVD |'
           'Distributor:Buena Vista Home Entertainment |'
           'Place (if available): | Special Credits or Other Information: A '
           'Pixar Animation Studios Film'),
         place_format('<i>{}</i> {}, {}, {}{}. {}', 4))
-BibType(_('Television Program (Single)'),
+BibType('Television Program (Single)', _('Television Program (Single)'),
         _('Title:Ten Bucks A Liter | Year of Broadcast:2013 | Format:iview |'
           'Television Channel:ABC | Place (if available): |'
           'Date of Broadcast:1 August'),
         place_format('<i>{}</i> {}, {}, {}{}, {}', 4))
-BibType(_('Television Program (Part of Series)'),
+BibType('Television Program (Part of Series)',
+        _('Television Program (Part of Series)'),
         _('Episode Title:Radio Goodies | Year of Broadcast:1970 |'
           'Series Title: The Goodies | Format:DVD |'
           'Television Channel:BBC | Place (if available): |'

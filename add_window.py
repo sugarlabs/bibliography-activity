@@ -177,4 +177,4 @@ class EntryWindow(BaseWindow):
             values.append(e.get_text())
         result = self._type.format(map(GLib.markup_escape_text, values))
         
-        self.emit('save-item', result, self._type.name, json.dumps(values))
+        self.emit('save-item', result, self._type.type, json.dumps(values))
