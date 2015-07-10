@@ -1,0 +1,16 @@
+3
+
+* Export as Write document (abiword format)
+* Improved scrolling (scrollbars now visible, ScrollingDetector)
+* Use bundle launcher to open offer to open exported files
+* Use sugar style palettes instaed of GtkMenu palettes
+* Icon improvements
+* Small visual improvements
+
+2
+
+* Fixed typo thanks to Quozl
+
+1
+
+* First release
