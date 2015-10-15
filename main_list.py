@@ -38,7 +38,8 @@ class MainList(Gtk.TreeView):
     COLUMN_TYPE = 1
     COLUMN_DATA = 2
 
-    def __init__(self, scrolled_window):
+    def __init__(self, scrolled_window, collab):
+        self._collab = collab
         self._store = Gtk.ListStore(str, str, str)
 
         self._sort = Gtk.TreeModelSort(self._store)
@@ -112,7 +113,7 @@ class MainList(Gtk.TreeView):
 
     def create_palette(self, path, column):
         row = list(self.get_model()[path])
-        return ItemPalette(row, self)
+        return ItemPalette(row, self, self._collab)
 
 
 class TextRenderer(Gtk.CellRendererText):
@@ -137,8 +138,11 @@ class TextRenderer(Gtk.CellRendererText):
 
 class ItemPalette(Palette):
 
-    def __init__(self, row, tree_view):
+    def __init__(self, row, tree_view, collab):
         Palette.__init__(self, primary_text=_(row[MainList.COLUMN_TYPE]))
+        self._collab = collab
+        self._row = row
+        self._tree_view = tree_view
 
         box = PaletteMenuBox()
         self.set_content(box)
@@ -150,6 +154,13 @@ class ItemPalette(Palette):
         menu_item.show()
 
         menu_item = PaletteMenuItem(_('Delete'), icon_name='edit-delete')
-        menu_item.connect('activate', lambda *args: tree_view.delete(row))
+        menu_item.connect('activate', self.__delete_cb) 
         box.append_item(menu_item)
         menu_item.show()
+
+    def __delete_cb(self, *args):
+        self._tree_view.delete(self._row)
+        self._collab.post(dict(
+            action='delete_row',
+            args=self._row
+        ))

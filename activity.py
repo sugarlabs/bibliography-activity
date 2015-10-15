@@ -40,6 +40,7 @@ try:
 except ImportError:
     get_bundle = lambda **kwargs: None
 
+from textchannelwrapper import CollabWrapper
 from add_button import AddToolButton
 from add_window import EntryWindow
 from bib_types import ALL_TYPES, ALL_TYPE_NAMES
@@ -51,6 +52,8 @@ class BibliographyActivity(activity.Activity):
     def __init__(self, handle):
         activity.Activity.__init__(self, handle)
         self._has_read_file = False
+        self._collab = CollabWrapper(self)
+        self._collab.message.connect(self.__message_cb)
 
         screen = Gdk.Screen.get_default()
         css_provider = Gtk.CssProvider.get_default()
@@ -101,7 +104,7 @@ class BibliographyActivity(activity.Activity):
         self._main_sw.connect('key-press-event',
                               self.__key_press_event_cb)
 
-        self._main_list = MainList(self._main_sw)
+        self._main_list = MainList(self._main_sw, self._collab)
         self._main_list.connect('edit-row', self.__edit_row_cb)
         self._main_list.connect('deleted-row', self.__deleted_row_cb)
         self._main_sw.add(self._main_list)
@@ -122,7 +125,18 @@ class BibliographyActivity(activity.Activity):
         self._main_sw.show()
         self._main_list.show()
         self._main_list.add(text, type_, data)
-        
+
+    def __message_cb(self, collab, buddy, msg):
+        action = msg.get('action')
+        if action is None:
+            return
+
+        args = msg.get('args')
+        if action == 'add_item':
+            self.add_item(*args)
+        elif action == 'delete_row':
+            self._main_list.delete(args)
+
     def __add_type_cb(self, add_button, type_):
         window = EntryWindow(ALL_TYPES[type_], self)
         window.connect('save-item', self.__save_item_cb)
@@ -133,6 +147,10 @@ class BibliographyActivity(activity.Activity):
         self.add_item(*args)
         window.hide()
         self._overlay.remove(window)
+        self._collab.post(dict(
+            action='add_item',
+            args=args
+        ))
 
     def __edit_row_cb(self, tree_view, type_, json_string):
         previous_values = json.loads(json_string)
@@ -273,6 +291,9 @@ class BibliographyActivity(activity.Activity):
 
         self.metadata['mime_type'] == 'application/json+bib'
 
+    def get_data(self):
+        return self._main_list.all()
+
     def read_file(self, file_path):
         # FIXME: Why does sugar call read_file so many times?
         if self._has_read_file:
@@ -281,7 +302,9 @@ class BibliographyActivity(activity.Activity):
 
         with open(file_path) as f:
             l = json.load(f)
+        self.read_data(l)
 
+    def read_data(self, l):
         if len(l) > 0:
             self._main_list.load_json(l)
             self._empty_message.hide()
