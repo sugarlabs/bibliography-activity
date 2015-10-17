@@ -78,8 +78,16 @@ class MainList(Gtk.TreeView):
         return [row[:] for row in self._store]
 
     def load_json(self, list_):
+        # Only add entries we don't already have, eg resuming shared activity
         for row in list_:
-            self._store.append(row)
+            if row not in self._store:
+                self._store.append(row)
+            else:
+                # Somebody added this offline
+                self._collab.post(dict(
+                    action='add_item',
+                    args=row
+                ))
 
     def edit(self, row):
         self._editing_iter = None
@@ -88,7 +96,7 @@ class MainList(Gtk.TreeView):
                 self._editing_iter = i.iter
                 break
         if self._editing_iter is None:
-            logging.error('Trying to edit a row that does not exsist')
+            logging.error('Trying to edit a row that does not exist')
             logging.error('Row: {}'.format(self._editing_iter))
             return
 
@@ -100,9 +108,18 @@ class MainList(Gtk.TreeView):
             return
 
         self._store.set(self._editing_iter, range(3), row)
+	self._collab.post(dict(
+            action='edit_item',
+            path=self._store.get_string_from_iter(self._editing_iter),
+            args=row
+        ))
 
         window.hide()
         window.get_parent().remove(window)
+
+    def edited_via_collab(self, path, row):
+        i = self._store.get_iter_from_string(path)
+        self._store.set(i, range(3), row)
 
     def delete(self, delete_row):
         for row in self._store:

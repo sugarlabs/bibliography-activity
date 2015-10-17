@@ -57,7 +57,7 @@ class BaseWindow(Gtk.Box):
         self.props.valign = Gtk.Align.CENTER
 
         self._tb = Gtk.Toolbar()
-        self.pack_start(self._tb, False, True, 0)
+        self.pack_start(self._tb, True, True, 0)
         self._tb.show()
 
         sep = Gtk.SeparatorToolItem()

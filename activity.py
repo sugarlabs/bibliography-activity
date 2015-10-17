@@ -1,4 +1,4 @@
-# Copyright 2014 Sam Parkinson
+# Copyright (C) 2014-15 Sam Parkinson
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -40,7 +40,12 @@ try:
 except ImportError:
     get_bundle = lambda **kwargs: None
 
-from textchannelwrapper import CollabWrapper
+try:
+    from sugar3.presence.wrapper import CollabWrapper
+    logging.error('USING SUGAR WRAPPER VERSION!  YEAH! ' * 10)
+except ImportError:
+    from textchannelwrapper import CollabWrapper
+
 from add_button import AddToolButton
 from add_window import EntryWindow
 from bib_types import ALL_TYPES, ALL_TYPE_NAMES
@@ -118,6 +123,8 @@ class BibliographyActivity(activity.Activity):
         self.set_canvas(self._overlay)
         self._overlay.show()
 
+        self._collab.setup()
+
     def add_item(self, text, type_, data):
         self._empty_message.hide()
         self._overlay.remove(self._overlay.get_child())
@@ -136,6 +143,10 @@ class BibliographyActivity(activity.Activity):
             self.add_item(*args)
         elif action == 'delete_row':
             self._main_list.delete(args)
+        elif action == 'edit_item':
+            self._main_list.edited_via_collab(msg.get('path'), args)
+        else:
+            logging.error('Got message that is weird %r', msg)
 
     def __add_type_cb(self, add_button, type_):
         window = EntryWindow(ALL_TYPES[type_], self)
@@ -302,9 +313,9 @@ class BibliographyActivity(activity.Activity):
 
         with open(file_path) as f:
             l = json.load(f)
-        self.read_data(l)
+        self.set_data(l)
 
-    def read_data(self, l):
+    def set_data(self, l):
         if len(l) > 0:
             self._main_list.load_json(l)
             self._empty_message.hide()

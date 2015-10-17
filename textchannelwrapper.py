@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Walter Bender
+# Copyright (C) 2015 Walter Bender
 # Copyright (C) 2015 Sam Parkinson
 #
 # This program is free software; you can redistribute it and/or modify
@@ -6,12 +6,65 @@
 # the Free Software Foundation; either version 3 of the License, or
 # (at your option) any later version.
 #
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, write to the Free Software
 # Foundation, 51 Franklin Street, Suite 500 Boston, MA 02110-1335 USA
 
+'''
+The wrapper module provides an abstraction over the sugar
+collaboration system.
+
+Using CollabWrapper
+-------------------
+1. Implement the `get_data` and `set_data` methods in your activity
+   class::
+
+    def get_data(self):
+        # return plain python objects - things that can be encoded
+        # using the json module
+        return dict(
+            text=self._entry.get_text()
+        )
+
+    def set_data(self, data):
+        # data will be the same object returned by get_data
+        self._entry.set_text(data.get('text'))
+
+2. Make your CollabWrapper instance::
+
+    def __init__(self, handle):
+        sugar3.activity.activity.Activity.__init__(self, handle)
+        self._collab = CollabWrapper(self)
+        self._collab.connect('message', self.__message_cb)
+
+        # setup your activity
+
+        self._collab.setup()
+
+3. Post any changes to the CollabWrapper.  The changes will be sent to
+   other users if any are connected::
+
+    def __entry_changed_cb(self, *args):
+        self._collab.post(dict(
+            action='entry_changed',
+            new_text=self._entry.get_text()
+        ))
+
+4. Handle incoming messages::
+
+    def __message_cb(self, collab, buddy, message):
+        action = msg.get('action')
+        if action == 'entry_changed':
+            self._entry.set_text(msg.get('new_text'))
+'''
+
 import json
-from base64 import b64encode, b64decode
+from gettext import gettext as _
 from gi.repository import GObject
 
 from telepathy.interfaces import CHANNEL_INTERFACE
@@ -26,43 +79,64 @@ from sugar3.presence import presenceservice
 from sugar3.activity.activity import SCOPE_PRIVATE
 from sugar3.graphics.alert import NotifyAlert, Alert
 
-from gettext import gettext as _
-
 import logging
 _logger = logging.getLogger('text-channel-wrapper')
 
-'''
-Usage:
-
-(1) Create a Text Channel by passing in the
-self.shared_activity.telepathy_text_chan and
-self.shared_activity.telepathy_conn.
-(2) Set a callback for when messages are receieved.
-(3) Send messages with the post method.
-'''
-
-# TODO note 'action' can't start with !!
 ACTION_INIT_REQUEST = '!!ACTION_INIT_REQUEST'
 ACTION_INIT_RESPONSE = '!!ACTION_INIT_RESPONSE'
 
 
 class CollabWrapper(GObject.GObject):
+    '''
+    The collaboration wrapper provides a high level abstraction over the
+    collaboration system.  The wrapper deals with setting up the channels,
+    encoding and decoding messages, initialization and alerting the user
+    to the status.
 
-    message = GObject.Signal('message', arg_types=([object, object]))
+    When a user joins the activity, it will query the leader for the
+    contents.  The leader will return the result of the activity's
+    `get_data` function which will be passed to the `set_data` function
+    on the new user's computer.
+
+    The `message` signal is called when a message is received from a
+    buddy.  It has 2 arguments.  The first is the buddy, as a
+    :class:`sugar3.presence.buddy.Buddy`. The second is the decoded
+    content of the message, same as that posted by the other instance.
+
+    The `joined` signal is emitted when the buddy joins a running
+    activity.  If the user shares and activity, the joined signal
+    is not emitted.  By the time this signal is emitted, the channels
+    will be setup so all messages will flow through.
+
+    The `buddy_joined` and `buddy_left` signals are emitted when
+    another user joins or leaves the activity.  They both a
+    :class:`sugar3.presence.buddy.Buddy` as their only argument.
+    '''
+
+    message = GObject.Signal('message', arg_types=[object, object])
     joined = GObject.Signal('joined')
-    buddy_joined = GObject.Signal('buddy_joined')
-    buddy_left = GObject.Signal('buddy_left')  # FIXME
+    buddy_joined = GObject.Signal('buddy_joined', arg_types=[object])
+    buddy_left = GObject.Signal('buddy_left', arg_types=[object])
 
     def __init__(self, activity):
         GObject.GObject.__init__(self)
         self.activity = activity
         self.shared_activity = activity.shared_activity
-        self.leader = False
-        self.init_waiting = False
+        self._leader = False
+        self._init_waiting = False
         self._text_channel = None
 
-        # self.owner = presenceservice.get_instance().get_owner()
+    def setup(self):
+        '''
+        Setup must be called to so that the activity can join or share
+        if appropriate.
 
+        .. note::
+            As soon as setup is called, any signal, `get_data` or
+            `set_data` call must be made.  This means that your
+            activity must have set up enough so these functions can
+            work.
+        '''
         # Some glue to know if we are launching, joining, or resuming
         # a shared activity.
         if self.shared_activity:
@@ -73,8 +147,9 @@ class CollabWrapper(GObject.GObject):
                 _logger.debug('calling _joined_cb')
                 self.__joined_cb(self)
             else:
-                _logger.debug('Please wait')
-                self._alert(_('Please wait'), _('Starting connection...'))
+                _logger.debug('Joining activity...')
+                self._alert(_('Joining activity...'),
+                            _('Please wait for the connection...'))
         else:
             if not self.activity.metadata or self.activity.metadata.get(
                     'share-scope', SCOPE_PRIVATE) == \
@@ -88,10 +163,10 @@ class CollabWrapper(GObject.GObject):
                             _('Please wait for the connection...'))
             self.activity.connect('shared', self.__shared_cb)
 
-    def _alert(self, title, text=None):
-        a = NotifyAlert(timeout=5)
+    def _alert(self, title, msg=None):
+        a = NotifyAlert()
         a.props.title = title
-        # FIXME a.props.text = text
+        a.props.msg = msg
         self.activity.add_alert(a)
         a.connect('response', lambda a, r: self.activity.remove_alert(a))
         a.show()
@@ -101,23 +176,17 @@ class CollabWrapper(GObject.GObject):
         self.shared_activity = self.activity.shared_activity
         self._setup_text_channel()
 
-        self.leader = True
+        self._leader = True
         _logger.debug('I am sharing...')
-        self._alert(_('shared cb'), ('I am sharing'));
-        
+
     def __joined_cb(self, sender):
         '''Callback for when an activity is joined.'''
         self.shared_activity = self.activity.shared_activity
         if not self.shared_activity:
             return
-        _logger.debug('Joined a shared chat')
-        self._alert(_('joined cb'), ('I am joining'));
 
-        # WTF does this do?
-        # for buddy in self.shared_activity.get_joined_buddies():
-        #    self._buddy_already_exists(buddy)
         self._setup_text_channel()
-        self.init_waiting = True
+        self._init_waiting = True
         self.post({'action': ACTION_INIT_REQUEST})
 
         _logger.debug('I joined a shared activity.')
@@ -125,7 +194,7 @@ class CollabWrapper(GObject.GObject):
 
     def _setup_text_channel(self):
         ''' Set up a text channel to use for collaboration. '''
-        self._text_channel = TextChannelWrapper(
+        self._text_channel = _TextChannelWrapper(
             self.shared_activity.telepathy_text_chan,
             self.shared_activity.telepathy_conn)
 
@@ -141,46 +210,48 @@ class CollabWrapper(GObject.GObject):
     def __received_cb(self, buddy, msg):
         '''Process a message when it is received.'''
         action = msg.get('action')
-        if action == ACTION_INIT_REQUEST and self.leader:
+        if action == ACTION_INIT_REQUEST and self._leader:
             data = self.activity.get_data()
             self.post({'action': ACTION_INIT_RESPONSE, 'data': data})
             return
-        elif action == ACTION_INIT_RESPONSE and self.init_waiting:
+        elif action == ACTION_INIT_RESPONSE and self._init_waiting:
             data = msg['data']
-            self.activity.read_data(data)
-            self.init_waiting = False
+            self.activity.set_data(data)
+            self._init_waiting = False
             return
 
         if buddy:
-            if type(buddy) is dict:
-                nick = buddy['nick']
-            else:
-                nick = buddy.props.nick
+            nick = buddy.props.nick
         else:
             nick = '???'
-        _logger.error('Received message from %s: %r' % (nick, msg))
+        _logger.debug('Received message from %s: %r', nick, msg)
         self.message.emit(buddy, msg)
 
     def post(self, msg):
-        _logger.error('Posting msg %r', msg)
+        '''
+        Broadcast a message to the other buddies if the activity is
+        shared.  If it is not shared, the message will not be send
+        at all.
+
+        Args:
+            msg (object): json encodable object to send to the other
+                buddies, eg. :class:`dict` or :class:`str`.
+        '''
+        _logger.debug('Posting msg %r', msg)
         if self._text_channel is not None:
-            _logger.error('\tLegit post')
+            _logger.debug('\tActually posting post')
             self._text_channel.post(msg)
 
     def __buddy_joined_cb(self, sender, buddy):
         '''A buddy joined.'''
-        return
-        if buddy == self.owner:
-            return
+        self.buddy_joined.emit(buddy)
 
     def __buddy_left_cb(self, sender, buddy):
         '''A buddy left.'''
-        return
-        if buddy == self.owner:
-            return
+        self.buddy_left.emit(buddy)
 
 
-class TextChannelWrapper(object):
+class _TextChannelWrapper(object):
     '''Wrapper for a telepathy Text Channel'''
 
     def __init__(self, text_chan, conn):
@@ -202,8 +273,6 @@ class TextChannelWrapper(object):
     def _send(self, text):
         '''Send text over the Telepathy text channel.'''
         _logger.debug('sending %s' % text)
-
-        text = b64encode(text)
 
         if self._text_chan is not None:
             self._text_chan[CHANNEL_TYPE_TEXT].Send(
@@ -257,7 +326,6 @@ class TextChannelWrapper(object):
             # Exclude any auxiliary messages
             return
 
-        text = b64decode(text)
         msg = json.loads(text)
 
         if self._activity_cb:
@@ -308,8 +376,8 @@ class TextChannelWrapper(object):
         my_csh = group.GetSelfHandle()
         if my_csh == cs_handle:
             handle = conn.GetSelfHandle()
-        elif group.GetGroupFlags() & \
-             CHANNEL_GROUP_FLAG_CHANNEL_SPECIFIC_HANDLES:
+        elif (group.GetGroupFlags() &
+              CHANNEL_GROUP_FLAG_CHANNEL_SPECIFIC_HANDLES):
             handle = group.GetHandleOwners([cs_handle])[0]
         else:
             handle = cs_handle
