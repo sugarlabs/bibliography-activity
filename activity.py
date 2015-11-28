@@ -42,7 +42,7 @@ except ImportError:
 
 try:
     from sugar3.presence.wrapper import CollabWrapper
-    logging.error('USING SUGAR WRAPPER VERSION!  YEAH! ' * 10)
+    logging.error('USING SUGAR COLLAB WRAPPER!')
 except ImportError:
     from textchannelwrapper import CollabWrapper
 
@@ -296,6 +296,8 @@ class BibliographyActivity(activity.Activity):
         self.remove_alert(alert)
 
     def write_file(self, file_path):
+        if self._main_list is None:
+            return  # WhataTerribleFailure
         data = self._main_list.all()
         with open(file_path, 'w') as f:
             json.dump(data, f)

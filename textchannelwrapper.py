@@ -61,19 +61,36 @@ Using CollabWrapper
         action = msg.get('action')
         if action == 'entry_changed':
             self._entry.set_text(msg.get('new_text'))
+
 '''
 
+import os
 import json
+import socket
 from gettext import gettext as _
-from gi.repository import GObject
 
-from telepathy.interfaces import CHANNEL_INTERFACE
-from telepathy.interfaces import CHANNEL_INTERFACE_GROUP
-from telepathy.interfaces import CHANNEL_TYPE_TEXT
-from telepathy.interfaces import CONN_INTERFACE_ALIASING
-from telepathy.constants import CHANNEL_GROUP_FLAG_CHANNEL_SPECIFIC_HANDLES
-from telepathy.constants import CHANNEL_TEXT_MESSAGE_TYPE_NORMAL
-from telepathy.client import Connection
+from gi.repository import GObject
+from gi.repository import Gio
+from gi.repository import GLib
+import dbus
+
+from telepathy.interfaces import \
+    CHANNEL_INTERFACE, \
+    CHANNEL_INTERFACE_GROUP, \
+    CHANNEL_TYPE_TEXT, \
+    CHANNEL_TYPE_FILE_TRANSFER, \
+    CONN_INTERFACE_ALIASING, \
+    CONNECTION_INTERFACE_REQUESTS, \
+    CHANNEL, \
+    CLIENT
+from telepathy.constants import \
+    CHANNEL_GROUP_FLAG_CHANNEL_SPECIFIC_HANDLES, \
+    CONNECTION_HANDLE_TYPE_CONTACT, \
+    CHANNEL_TEXT_MESSAGE_TYPE_NORMAL, \
+    CONNECTION_HANDLE_TYPE_CONTACT, \
+    SOCKET_ADDRESS_TYPE_UNIX, \
+    SOCKET_ACCESS_CONTROL_LOCALHOST
+from telepathy.client import Connection, Channel
 
 from sugar3.presence import presenceservice
 from sugar3.activity.activity import SCOPE_PRIVATE
@@ -84,6 +101,7 @@ _logger = logging.getLogger('text-channel-wrapper')
 
 ACTION_INIT_REQUEST = '!!ACTION_INIT_REQUEST'
 ACTION_INIT_RESPONSE = '!!ACTION_INIT_RESPONSE'
+ACTIVITY_FT_MIME = 'x-sugar/from-activity'
 
 
 class CollabWrapper(GObject.GObject):
@@ -111,12 +129,20 @@ class CollabWrapper(GObject.GObject):
     The `buddy_joined` and `buddy_left` signals are emitted when
     another user joins or leaves the activity.  They both a
     :class:`sugar3.presence.buddy.Buddy` as their only argument.
+
+    The `incoming_file` signal is emitted when a file transfer is
+    received from a buddy.  The first argument is the object representing
+    the transfer, as a
+    :class:`sugar3.presence.filetransfer.IncomingFileTransfer`.  The seccond
+    argument is the description, as passed to the `send_file_*` function
+    on the sender's client
     '''
 
     message = GObject.Signal('message', arg_types=[object, object])
     joined = GObject.Signal('joined')
     buddy_joined = GObject.Signal('buddy_joined', arg_types=[object])
     buddy_left = GObject.Signal('buddy_left', arg_types=[object])
+    incoming_file = GObject.Signal('incoming_file', arg_types=[object, object])
 
     def __init__(self, activity):
         GObject.GObject.__init__(self)
@@ -135,7 +161,8 @@ class CollabWrapper(GObject.GObject):
             As soon as setup is called, any signal, `get_data` or
             `set_data` call must be made.  This means that your
             activity must have set up enough so these functions can
-            work.
+            work.  For example, place this at the end of the activity's
+            `__init__` function.
         '''
         # Some glue to know if we are launching, joining, or resuming
         # a shared activity.
@@ -175,6 +202,7 @@ class CollabWrapper(GObject.GObject):
         ''' Callback for when activity is shared. '''
         self.shared_activity = self.activity.shared_activity
         self._setup_text_channel()
+        self._listen_for_channels()
 
         self._leader = True
         _logger.debug('I am sharing...')
@@ -186,6 +214,7 @@ class CollabWrapper(GObject.GObject):
             return
 
         self._setup_text_channel()
+        self._listen_for_channels()
         self._init_waiting = True
         self.post({'action': ACTION_INIT_REQUEST})
 
@@ -207,17 +236,54 @@ class CollabWrapper(GObject.GObject):
         self.shared_activity.connect('buddy-joined', self.__buddy_joined_cb)
         self.shared_activity.connect('buddy-left', self.__buddy_left_cb)
 
+    def _listen_for_channels(self):
+        conn = self.shared_activity.telepathy_conn
+        conn.connect_to_signal('NewChannels', self.__new_channels_cb)
+
+    def __new_channels_cb(self, channels):
+        conn = self.shared_activity.telepathy_conn
+        for path, props in channels:
+            if props[CHANNEL + '.Requested']:
+                continue  # This channel was requested by me
+
+            channel_type = props[CHANNEL + '.ChannelType']
+            if channel_type == CHANNEL_TYPE_FILE_TRANSFER:
+                self._handle_ft_channel(conn, path, props)
+
+    def _handle_ft_channel(self, conn, path, props):
+        ft = IncomingFileTransfer(conn, path, props)
+        if ft.description == ACTION_INIT_RESPONSE:
+            ft.connect('notify::state', self.__notify_ft_state_cb)
+            ft.accept_to_memory()
+        else:
+            desc = json.loads(ft.description)
+            self.incoming_file.emit(ft, desc)
+
+    def __notify_ft_state_cb(self, ft, pspec):
+        if ft.props.state == FT_STATE_COMPLETED and self._init_waiting:
+            stream = ft.props.output
+            stream.close(None)
+            # FIXME:  The data prop seems to just be the raw pointer
+            gbytes = stream.steal_as_bytes()
+            data = gbytes.get_data()
+            logging.debug('Got init data from buddy:  %s', data)
+            data = json.loads(data)
+            self.activity.set_data(data)
+            self._init_waiting = False
+
     def __received_cb(self, buddy, msg):
         '''Process a message when it is received.'''
         action = msg.get('action')
         if action == ACTION_INIT_REQUEST and self._leader:
             data = self.activity.get_data()
-            self.post({'action': ACTION_INIT_RESPONSE, 'data': data})
-            return
-        elif action == ACTION_INIT_RESPONSE and self._init_waiting:
-            data = msg['data']
-            self.activity.set_data(data)
-            self._init_waiting = False
+            data = json.dumps(data)
+            OutgoingBlobTransfer(
+                buddy,
+                self.shared_activity.telepathy_conn,
+                data,
+                self.get_client_name(),
+                ACTION_INIT_RESPONSE,
+                ACTIVITY_FT_MIME)
             return
 
         if buddy:
@@ -226,6 +292,48 @@ class CollabWrapper(GObject.GObject):
             nick = '???'
         _logger.debug('Received message from %s: %r', nick, msg)
         self.message.emit(buddy, msg)
+
+    def send_file_memory(self, buddy, data, description):
+        '''
+        Send a 1-to-1 transfer from memory to a given buddy.  They will
+        get the file transfer and description through the `incoming_transfer`
+        signal.
+
+        Args:
+            buddy (sugar3.presence.buddy.Buddy), buddy to offer the transfer to
+            data (str), the data to offer to the buddy via the transfer
+            description (object), a json encodable description for the
+                transfer.  This will be given to the `incoming_transfer` signal
+                of the transfer
+        '''
+        OutgoingBlobTransfer(
+            buddy,
+            self.shared_activity.telepathy_conn,
+            data,
+            self.get_client_name(),
+            json.dumps(description),
+            ACTIVITY_FT_MIME)
+
+    def send_file_file(self, buddy, path, description):
+        '''
+        Send a 1-to-1 transfer from a file to a given buddy.  They will
+        get the file transfer and description through the `incoming_transfer`
+        signal.
+
+        Args:
+            buddy (sugar3.presence.buddy.Buddy), buddy to offer the transfer to
+            path (str), path of the file to send to the buddy
+            description (object), a json encodable description for the
+                transfer.  This will be given to the `incoming_transfer` signal
+                of the transfer
+        '''
+        OutgoingFileTransfer(
+            buddy,
+            self.shared_activity.telepathy_conn,
+            path,
+            self.get_client_name(),
+            json.dumps(description),
+            ACTIVITY_FT_MIME)
 
     def post(self, msg):
         '''
@@ -237,9 +345,7 @@ class CollabWrapper(GObject.GObject):
             msg (object): json encodable object to send to the other
                 buddies, eg. :class:`dict` or :class:`str`.
         '''
-        _logger.debug('Posting msg %r', msg)
         if self._text_channel is not None:
-            _logger.debug('\tActually posting post')
             self._text_channel.post(msg)
 
     def __buddy_joined_cb(self, sender, buddy):
@@ -249,6 +355,329 @@ class CollabWrapper(GObject.GObject):
     def __buddy_left_cb(self, sender, buddy):
         '''A buddy left.'''
         self.buddy_left.emit(buddy)
+
+    def get_client_name(self):
+        '''
+        Get the name of the activity's telepathy client.
+
+        Returns: str, telepathy client name
+        '''
+        return CLIENT + '.' + self.activity.get_bundle_id()
+
+
+FT_STATE_NONE = 0
+FT_STATE_PENDING = 1
+FT_STATE_ACCEPTED = 2
+FT_STATE_OPEN = 3
+FT_STATE_COMPLETED = 4
+FT_STATE_CANCELLED = 5
+
+FT_REASON_NONE = 0
+FT_REASON_REQUESTED = 1
+FT_REASON_LOCAL_STOPPED = 2
+FT_REASON_REMOTE_STOPPED = 3
+FT_REASON_LOCAL_ERROR = 4
+FT_REASON_LOCAL_ERROR = 5
+FT_REASON_REMOTE_ERROR = 6
+
+
+class _BaseFileTransfer(GObject.GObject):
+    '''
+    The base file transfer should not be used directly.  It is used as a
+    base class for the incoming and outgoing file transfers.
+
+    Props:
+        filename (str), metadata provided by the buddy
+        file_size (str), size of the file being sent/received, in bytes
+        description (str), metadata provided by the buddy
+        mime_type (str), metadata provided by the buddy
+        buddy (:class:`sugar3.presence.buddy.Buddy`), other party
+            in the transfer
+        reason_last_change (FT_REASON_*), reason for the last state change
+
+    GObject Props:
+        state (FT_STATE_*), current state of the transfer
+        transferred_bytes (int), number of bytes transfered so far
+    '''
+
+
+    def __init__(self):
+        GObject.GObject.__init__(self)
+        self._state = FT_STATE_NONE
+        self._transferred_bytes = 0
+
+        self.channel = None
+        self.buddy = None
+        self.filename = None
+        self.file_size = None
+        self.description = None
+        self.mime_type = None
+        self.reason_last_change = FT_REASON_NONE
+
+    def set_channel(self, channel):
+        '''
+        Setup the file transfer to use a given telepathy channel.  This
+        should only be used by direct subclasses of the base file transfer.
+        '''
+        self.channel = channel
+        self.channel[CHANNEL_TYPE_FILE_TRANSFER].connect_to_signal(
+            'FileTransferStateChanged', self.__state_changed_cb)
+        self.channel[CHANNEL_TYPE_FILE_TRANSFER].connect_to_signal(
+            'TransferredBytesChanged', self.__transferred_bytes_changed_cb)
+        self.channel[CHANNEL_TYPE_FILE_TRANSFER].connect_to_signal(
+            'InitialOffsetDefined', self.__initial_offset_defined_cb)
+
+        channel_properties = self.channel[dbus.PROPERTIES_IFACE]
+
+        props = channel_properties.GetAll(CHANNEL_TYPE_FILE_TRANSFER)
+        self._state = props['State']
+        self.filename = props['Filename']
+        self.file_size = props['Size']
+        self.description = props['Description']
+        self.mime_type = props['ContentType']
+
+    def __transferred_bytes_changed_cb(self, transferred_bytes):
+        logging.debug('__transferred_bytes_changed_cb %r', transferred_bytes)
+        self.props.transferred_bytes = transferred_bytes
+
+    def _set_transferred_bytes(self, transferred_bytes):
+        self._transferred_bytes = transferred_bytes
+
+    def _get_transferred_bytes(self):
+        return self._transferred_bytes
+
+    transferred_bytes = GObject.property(type=int,
+                                         default=0,
+                                         getter=_get_transferred_bytes,
+                                         setter=_set_transferred_bytes)
+
+    def __initial_offset_defined_cb(self, offset):
+        logging.debug('__initial_offset_defined_cb %r', offset)
+        self.initial_offset = offset
+
+    def __state_changed_cb(self, state, reason):
+        logging.debug('__state_changed_cb %r %r', state, reason)
+        self.reason_last_change = reason
+        self.props.state = state
+
+    def _set_state(self, state):
+        self._state = state
+
+    def _get_state(self):
+        return self._state
+
+    state = GObject.property(type=int, getter=_get_state, setter=_set_state)
+
+    def cancel(self):
+        '''
+        Request that telepathy close the file transfer channel
+
+        Spec:  http://telepathy.freedesktop.org/spec/Channel.html#Method:Close
+        '''
+        self.channel[CHANNEL].Close()
+
+
+class IncomingFileTransfer(_BaseFileTransfer):
+    '''
+    An incoming file transfer from another buddy.  You need to first accept
+    the transfer (either to memory or to a file).  Then you need to listen
+    to the state and wait until the transfer is completed.  Then you can
+    read the file that it was saved to, or access the
+    :class:`Gio.MemoryOutputStream` from the `output` property.
+
+    The `output` property is different depending on how the file was accepted.
+    If the file was accepted to a file on the file system, it is a string
+    representing the path to the file.  If the file was accepted to memory,
+    it is a :class:`Gio.MemoryOutputStream`.
+    '''
+
+    def __init__(self, connection, object_path, props):
+        _BaseFileTransfer.__init__(self)
+
+        channel = Channel(connection.bus_name, object_path)
+        self.set_channel(channel)
+
+        self.connect('notify::state', self.__notify_state_cb)
+
+        self._destination_path = None
+        self._output_stream = None
+        self._socket_address = None
+        self._socket = None
+        self._splicer = None
+
+    def accept_to_file(self, destination_path):
+        '''
+        Accept the file transfer and write it to a new file.  The file must
+        already exist.
+
+        Args:
+            destination_path (str): the path where a new file will be
+                created and saved to
+        '''
+        if os.path.exists(destination_path):
+            raise ValueError('Destination path already exists: %r' %
+                             destination_path)
+
+        self._destination_path = destination_path
+        self._accept()
+
+    def accept_to_memory(self):
+        '''
+        Accept the file transfer.  Once the state is FT_STATE_OPEN, a
+        :class:`Gio.MemoryOutputStream` accessible via the output prop.
+        '''
+        self._accept()
+
+    def _accept(self):
+        channel_ft = self.channel[CHANNEL_TYPE_FILE_TRANSFER]
+        self._socket_address = channel_ft.AcceptFile(
+            SOCKET_ADDRESS_TYPE_UNIX,
+            SOCKET_ACCESS_CONTROL_LOCALHOST,
+            '',
+            0,
+            byte_arrays=True)
+
+    def __notify_state_cb(self, file_transfer, pspec):
+        logging.debug('__notify_state_cb %r', self.props.state)
+        if self.props.state == FT_STATE_OPEN:
+            # Need to hold a reference to the socket so that python doesn't
+            # close the fd when it goes out of scope
+            self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._socket.connect(self._socket_address)
+            input_stream = Gio.UnixInputStream.new(self._socket.fileno(), True)
+
+            if self._destination_path is not None:
+                destination_file = Gio.File.new_for_path(
+                    self._destination_path)
+                if self.initial_offset == 0:
+                    self._output_stream = destination_file.create(
+                        Gio.FileCreateFlags.PRIVATE, None)
+                else:
+                    self._output_stream = destination_file.append_to()
+            else:
+                self._output_stream = Gio.MemoryOutputStream.new_resizable()
+
+            self._output_stream.splice_async(
+                input_stream,
+                Gio.OutputStreamSpliceFlags.CLOSE_SOURCE |
+                Gio.OutputStreamSpliceFlags.CLOSE_TARGET,
+                GLib.PRIORITY_LOW, None, None, None)
+
+    @GObject.Property
+    def output(self):
+        return self._destination_path or self._output_stream
+
+
+class _BaseOutgoingTransfer(_BaseFileTransfer):
+    '''
+    This class provides the base of an outgoing file transfer.
+
+    You can override the `_get_input_stream` method to return any type of
+    Gio input stream.  This will then be used to provide the file if
+    requested by the application.  You also need to call `_create_channel`
+    with the length of the file in bytes during your `__init__`.
+
+    Args:
+        buddy (sugar3.presence.buddy.Buddy), who to send the transfer to
+        conn (telepathy.client.conn.Connection), telepathy connection to
+            use to send the transfer.  Eg. `shared_activity.telepathy_conn`
+        filename (str), metadata sent to the receiver
+        description (str), metadata sent to the receiver
+        mime (str), metadata sent to the receiver
+    '''
+
+    def __init__(self, buddy, conn, filename, description, mime):
+        _BaseFileTransfer.__init__(self)
+        self.connect('notify::state', self.__notify_state_cb)
+
+        self._socket_address = None
+        self._socket = None
+        self._splicer = None
+        self._conn = conn
+        self._filename = filename
+        self._description = description
+        self._mime = mime
+        self.buddy = buddy
+
+    def _create_channel(self, file_size):
+        object_path, properties_ = self._conn.CreateChannel(dbus.Dictionary({
+            CHANNEL + '.ChannelType': CHANNEL_TYPE_FILE_TRANSFER,
+            CHANNEL + '.TargetHandleType': CONNECTION_HANDLE_TYPE_CONTACT,
+            CHANNEL + '.TargetHandle': self.buddy.contact_handle,
+            CHANNEL_TYPE_FILE_TRANSFER + '.Filename': self._filename,
+            CHANNEL_TYPE_FILE_TRANSFER + '.Description': self._description,
+            CHANNEL_TYPE_FILE_TRANSFER + '.Size': file_size,
+            CHANNEL_TYPE_FILE_TRANSFER + '.ContentType': self._mime,
+            CHANNEL_TYPE_FILE_TRANSFER + '.InitialOffset': 0}, signature='sv'))
+        self.set_channel(Channel(self._conn.bus_name, object_path))
+
+        channel_file_transfer = self.channel[CHANNEL_TYPE_FILE_TRANSFER]
+        self._socket_address = channel_file_transfer.ProvideFile(
+            SOCKET_ADDRESS_TYPE_UNIX, SOCKET_ACCESS_CONTROL_LOCALHOST, '',
+            byte_arrays=True)
+
+    def _get_input_stream(self):
+        raise NotImplementedError()
+
+    def __notify_state_cb(self, file_transfer, pspec):
+        if self.props.state == FT_STATE_OPEN:
+            # Need to hold a reference to the socket so that python doesn't
+            # closes the fd when it goes out of scope
+            self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._socket.connect(self._socket_address)
+            output_stream = Gio.UnixOutputStream.new(
+                self._socket.fileno(), True)
+
+            input_stream = self._get_input_stream()
+            output_stream.splice_async(
+                input_stream,
+                Gio.OutputStreamSpliceFlags.CLOSE_SOURCE |
+                Gio.OutputStreamSpliceFlags.CLOSE_TARGET,
+                GLib.PRIORITY_LOW, None, None, None)
+
+
+class OutgoingFileTransfer(_BaseOutgoingTransfer):
+    '''
+    An outgoing file transfer to send from a file (on the computer's file
+    system).
+
+    Note that the `path` argument is the path for the file that will be
+    sent, whereas the `filename` argument is only for metadata.
+
+    Args:
+        path (str), path of the file to send
+    '''
+
+    def __init__(self, buddy, conn, path, filename, description, mime):
+        _BaseOutgoingTransfer.__init__(
+            self, buddy, conn, filename, description, mime)
+
+        self._path = path
+        file_size = os.stat(path).st_size
+        self._create_channel(file_size)
+
+    def _get_input_stream(self):
+        logging.debug('opening %s for reading', self._file_name)
+        input_stream = Gio.File.new_for_path(self._file_name).read(None)
+
+
+class OutgoingBlobTransfer(_BaseOutgoingTransfer):
+    '''
+    An outgoing file transfer to send from a string in memory.
+
+    Args:
+        blob (str), data to send
+    '''
+
+    def __init__(self, buddy, conn, blob, filename, description, mime):
+        _BaseOutgoingTransfer.__init__(
+            self, buddy, conn, filename, description, mime)
+
+        self._blob = blob
+        self._create_channel(len(self._blob))
+
+    def _get_input_stream(self):
+        return Gio.MemoryInputStream.new_from_data(self._blob, None)
 
 
 class _TextChannelWrapper(object):
@@ -336,12 +765,12 @@ class _TextChannelWrapper(object):
                 nick = self._conn[
                     CONN_INTERFACE_ALIASING].RequestAliases([sender])[0]
                 buddy = {'nick': nick, 'color': '#000000,#808080'}
-                _logger.error('Exception: recieved from sender %r buddy %r' %
+                _logger.debug('exception: recieved from sender %r buddy %r' %
                               (sender, buddy))
             else:
                 # XXX: cache these
                 buddy = self._get_buddy(sender)
-                _logger.error('Else: recieved from sender %r buddy %r' %
+                _logger.debug('Else: recieved from sender %r buddy %r' %
                               (sender, buddy))
 
             self._activity_cb(buddy, msg)
