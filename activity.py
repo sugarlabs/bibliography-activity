@@ -1,4 +1,4 @@
-# Copyright 2014 Sam Parkinson
+# Copyright 2014-2016 Sam Parkinson
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,6 +35,10 @@ from sugar3.activity.widgets import StopButton
 from sugar3.graphics import style
 from sugar3.graphics.icon import Icon
 
+from sugar3.datastore import datastore
+from sugar3.graphics.objectchooser import ObjectChooser
+from sugar3.graphics.objectchooser import FILTER_TYPE_ACTIVITY
+
 try:
     from sugar3.activity.activity import get_bundle, launch_bundle
 except ImportError:
@@ -42,6 +46,7 @@ except ImportError:
 
 from add_button import AddToolButton
 from add_window import EntryWindow
+from browsewindow import BrowseImportWindow
 from bib_types import ALL_TYPES, ALL_TYPE_NAMES
 from main_list import MainList
 
@@ -81,6 +86,12 @@ class BibliographyActivity(activity.Activity):
         add_button.connect('add-type', self.__add_type_cb)
         toolbar_box.toolbar.insert(add_button, -1)
         add_button.show()
+
+        browse = ToolButton('export-as-abiword')
+        browse.set_tooltip(_('Add web pages from Browse instance'))
+        browse.connect('clicked', self.__import_from_browse_cb)
+        toolbar_box.toolbar.insert(browse, -1)
+        browse.show()
    
         separator = Gtk.SeparatorToolItem()
         separator.props.draw = False
@@ -133,6 +144,28 @@ class BibliographyActivity(activity.Activity):
         self.add_item(*args)
         window.hide()
         self._overlay.remove(window)
+
+    def __import_from_browse_cb(self, button):
+        chooser = ObjectChooser(parent=self,
+                                what_filter='org.laptop.WebActivity',
+                                filter_type=FILTER_TYPE_ACTIVITY)
+        result = chooser.run()
+
+        if result == Gtk.ResponseType.ACCEPT:
+            logging.debug('ObjectChooser: %r' % chooser.get_selected_object())
+            jobject = chooser.get_selected_object()
+            if jobject and jobject.file_path:
+                with open(jobject.file_path) as f:
+                    data = json.load(f)
+                window = BrowseImportWindow(data, self)
+                window.connect('save-item', self.__save_item_importer_cb)
+                self._overlay.add_overlay(window)
+
+        chooser.destroy()
+        del chooser
+
+    def __save_item_importer_cb(self, window, *args):
+        self.add_item(*args)
 
     def __edit_row_cb(self, tree_view, type_, json_string):
         previous_values = json.loads(json_string)

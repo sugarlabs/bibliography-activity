@@ -65,10 +65,10 @@ class BaseWindow(Gtk.Box):
         self._tb.insert(sep, -1)
         sep.show()
 
-        label = Gtk.Label()
-        label.set_markup('<b>{}</b>'.format(_('Edit Bibliography Entry')))
-        label.set_alignment(0, 0.5)
-        self._add_widget(label)
+        self.label = Gtk.Label()
+        self.label.set_markup('<b>{}</b>'.format(_('Edit Bibliography Entry')))
+        self.label.set_alignment(0, 0.5)
+        self._add_widget(self.label)
 
         sep = Gtk.SeparatorToolItem()
         sep.props.draw = False
