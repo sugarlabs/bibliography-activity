@@ -1,4 +1,4 @@
-# Copyright 2014 Sam Parkinson
+# Copyright 2014-2016 Sam Parkinson
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -27,11 +27,8 @@ from gi.repository import GObject
 
 from sugar3.graphics import style
 from sugar3.graphics.toolbutton import ToolButton
+from popwindow import PopWindow
 
-
-SPECIAL_PLACEHOLDERS = {
-    'datenow': lambda: '{:%d %B %Y}'.format(date.today())
-}
 
 def get_toplevel_size(toplevel):
     # Fixes a big where the window overflows on the XO
@@ -40,84 +37,34 @@ def get_toplevel_size(toplevel):
            min(toplevel.get_allocated_height(), screen.height())
 
 
-class BaseWindow(Gtk.Box):
+SPECIAL_PLACEHOLDERS = {
+    'datenow': lambda: '{:%d %B %Y}'.format(date.today())
+}
+
+
+class EntryWidget(Gtk.EventBox):
     '''
-    A basic Sugar style popover window.
-    Like view source mode.
-    
-    Use self to add content to a vbox.
+    A widget that lets the user compose a bibliography item, using
+    a pre built template/formatter.
+
+    Args:
+        bib_type (BibType): the type of item the user will add
+        toplevel (Gtk.Window): top level window that this will be added to
+        previous_values (list):  Values to use when updating the entry
+        timestamp (int): timestamp to use in a website template
+        title (str): title to use in a website template
+        uri (str): uri to use in a website template
     '''
 
-    __gtype_name__ = 'BibliographyBaseWindow'
-    
-    def __init__(self):
-        Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL)
-
-        self.props.halign = Gtk.Align.CENTER
-        self.props.valign = Gtk.Align.CENTER
-
-        self._tb = Gtk.Toolbar()
-        self.pack_start(self._tb, True, True, 0)
-        self._tb.show()
-
-        sep = Gtk.SeparatorToolItem()
-        sep.props.draw = False
-        self._tb.insert(sep, -1)
-        sep.show()
-
-        label = Gtk.Label()
-        label.set_markup('<b>{}</b>'.format(_('Edit Bibliography Entry')))
-        label.set_alignment(0, 0.5)
-        self._add_widget(label)
-
-        sep = Gtk.SeparatorToolItem()
-        sep.props.draw = False
-        sep.props.expand = True
-        self._tb.insert(sep, -1)
-        sep.show()
-
-        self.add_ = ToolButton(icon_name='dialog-ok')
-        self.add_.set_tooltip(_('Add Bibliography Item'))
-        self._tb.insert(self.add_, -1)
-        self.add_.show()
-
-        stop = ToolButton(icon_name='dialog-cancel')
-        stop.set_tooltip(_('Close'))
-        stop.connect('clicked', lambda *args: self.destroy())
-        self._tb.insert(stop, -1)
-        stop.show()
-
-        self.show()
-
-    def _add_widget(self, widget):
-        t = Gtk.ToolItem()
-        t.props.expand = True
-        t.add(widget)
-        widget.show()
-        self._tb.insert(t, -1)
-        t.show()
-
-
-class EntryWindow(BaseWindow):
-    
-    __gsignals__ = {
-        'save-item': (GObject.SIGNAL_RUN_FIRST, None, (str, str, str))
-    }
-    
-    def __init__(self, bib_type, toplevel, previous_values=None):
-        BaseWindow.__init__(self)
+    def __init__(self, bib_type, toplevel, previous_values=None,
+                 timestamp=None, title=None, uri=None):
+        Gtk.EventBox.__init__(self)
         self._type = bib_type
-
-        eb = Gtk.EventBox()
-        eb.get_style_context().add_class('window-event-box')
-        self.pack_start(eb, True, True, 0)
-        eb.show()
+        self.get_style_context().add_class('window-event-box')
 
         sw = Gtk.ScrolledWindow()
         sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        w, h = get_toplevel_size(toplevel)
-        sw.set_size_request(w / 2, h / 4 * 3)
-        eb.add(sw)
+        self.add(sw)
         sw.show()
 
         alignment = Gtk.Alignment()
@@ -158,6 +105,13 @@ class EntryWindow(BaseWindow):
                 entry.set_text(SPECIAL_PLACEHOLDERS[placeholder[1:]]())
             else:
                 entry.set_placeholder_text(placeholder)
+            if placeholder == '*datenow' and timestamp is not None:
+               entry.set_text('{:%d %B %Y}'.format(
+                    date.fromtimestamp(timestamp)))
+            if i == self._type.web_title_index and title is not None:
+                entry.set_text(title)
+            if i == self._type.web_uri_index and uri is not None:
+                entry.set_text(uri)
             if previous_values:
                 entry.set_text(previous_values[i])
             self._text_entries.append(entry)
@@ -168,13 +122,46 @@ class EntryWindow(BaseWindow):
             table.attach(entry, col, col + 1, start + 1, start + 2)
             label.show()
             entry.show()
-
-        self.add_.connect('clicked', self.__add_bib_cb)
     
-    def __add_bib_cb(self, button):
+    def get_data(self):
+        '''
+        Returns the state of the entry window as a tuple of:
+
+        * String of markup
+        * Type name (`BibType.type`)
+        * JSON dump of the values (good for use with `previous_values`)
+        '''
         values = []
         for e in self._text_entries:
             values.append(e.get_text())
         result = self._type.format(map(GLib.markup_escape_text, values))
         
-        self.emit('save-item', result, self._type.type, json.dumps(values))
+        return (result, self._type.type, json.dumps(values))
+
+
+class EntryWindow(PopWindow):
+
+    __gsignals__ = {
+        'save-item': (GObject.SIGNAL_RUN_FIRST, None, (str, str, str))
+    }
+
+    def __init__(self, bib_type, toplevel, previous_values=None):
+        PopWindow.__init__(self,
+                           transient_for=toplevel)
+        self.props.size = (int(Gdk.Screen.height() * 0.75),
+                           Gdk.Screen.width() / 2)
+        self.get_title_box().props.title = _('Edit Bibliography Entry')
+        self._type = bib_type
+
+        add = ToolButton(icon_name='dialog-ok')
+        add.props.tooltip = _('Add Bibliography Item')
+        add.connect('clicked', self.__add_bib_cb)
+        self.get_title_box().insert(add, 1)
+        add.show()
+
+        self._entry = EntryWidget(bib_type, toplevel, previous_values)
+        self.add_view(self._entry)
+        self._entry.show()
+
+    def __add_bib_cb(self, button):
+        self.emit('save-item', *self._entry.get_data())

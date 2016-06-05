@@ -19,14 +19,18 @@ from gettext import gettext as _
 
 ALL_TYPES = {}
 ALL_TYPE_NAMES = []
+WEB_TYPES = []
 
 
 class BibType(object):
 
-    def __init__(self, type, name, items, format_func):
+    def __init__(self, type, name, items, format_func,
+                 web_title=None, web_uri=None):
         self.type = type
         self.name = name
         self.format = format_func
+        self.web_title_index = web_title
+        self.web_uri_index = web_uri
 
         items = [tuple(item.strip().split(':')) for item in items.split('|')]
         # Fix issue with URLs having a colon
@@ -252,51 +256,58 @@ def license_format(string, index=-1):
         return string.format(*values)
     return closure
 
-BibType('Image with Creator (Real Name)',
-        _('Image with Creator (Real Name)'),
-        _('Last Name:Ganguly | First Name Initial:B | Year Created:2010 |'
-          'Title or Description:Chicken Egg without Eggshell | Format:Photo |'
-          'Sponsor or Orginisation:Wikimedia Commons | Accessed:*datenow |'
-          'URL:http://commons.wikimedia.org/wiki/File:Chicken_Egg_without_'
-          'Eggshell_5859.jpg | License URL (if available):http://commons.'
-          'wikimedia.org/wiki/'
-          'Commons:GNU_Free_Documentation_License,_version_1.2'),
-        license_format('{}, {} {}, <i>{}</i>, {}, {},'
-                       ' accessed {}, &lt;{}&gt;{}'))
-BibType('Image with Creator (Screen Name)',
-        _('Image with Creator (Screen Name)'),
-        _('Screen Name or User Name:Dschwen | Year Created:2009 |'
-          'Title or Description:Looking north from Chicago \'L\' station |'
-          'Format:Photo | Sponsor or Orginisation:Wikimedia Commons |'
-          'Accessed:*datenow | URL:http://commons.wikimedia.org/wiki/File:'
-          'CTA_Night.jpg | License URL (if available):http://creativecommons.'
-          'org/licenses/by-sa/4.0/deed.en'),
-        license_format('{} {}, <i>{}</i>, {}, {}, accessed {}, &lt;{}&gt;{}'))
-BibType('Image without Creator', _('Image without Creator'),
-        _('Title or Description:OLPC XO Laptop with Screen Twisted |'
-          'Year Created:n.d. | Format:Photo |'
-          'Sponsor or Orginisation:One Laptop Per Child |'
-          'Accessed:*datenow | URL:http://one.laptop.org/sites/default/files/'
-          'hardware-left-side-view.png | License URL (if available):'),
-        license_format('<i>{}</i> {}, {}, {}, accessed {}, &lt;{}&gt;{}'))
-
-BibType('Website with Author', _('Website with Author'),
-        _('Last Name:Lesinski | First Name Initial:K | Last Update:2014 |'
-          'Title of Webpage:MozJPEG 3.0 |'
-          'Sponsor or Orginisation:Performance Calendar | Accessed:*datenow |'
-          'URL:http://calendar.perfplanet.com/2014/mozjpeg-3-0/'),
-        basic_format('{}, {} {}, <i>{}</i>, {}, accessed {}, &lt;{}&gt;'))
-BibType('Website by Organisation', _('Website by Organisation'),
-        _('Name of Organisation:Sugar Labs | Last Update:2010 |'
-          'Title of Webpage:Sugar Labs-learning software for children |'
-          'Sponsor or Orginisation:Sugar Labs |'
-          'Accessed:*datenow | URL:http://sugarlabs.org/'),
-        basic_format('{} {}, <i>{}</i>, {}, accessed {}, &lt;{}&gt;'))
-BibType('Website without Author', _('Website without Author'),
-        _('Title of Webpage:Avocado Jackpot | Year Created:2014 |'
-          'Sponsor or Orginisation:Reddit | Accessed:*datenow |'
-          'URL:http://www.reddit.com/r/food/comments/2qnbpc/avocado_jackpot/'),
-        basic_format('<i>{}</i> {}, {}, accessed {}, &lt;{}&gt;'))
+WEB_TYPES.extend([ \
+    BibType('Image with Creator (Real Name)',
+            _('Image with Creator (Real Name)'),
+            _('Last Name:Ganguly | First Name Initial:B | Year Created:2010 |'
+              'Title or Description:Chicken Egg without Eggshell | Format:Photo |'
+              'Sponsor or Orginisation:Wikimedia Commons | Accessed:*datenow |'
+              'URL:http://commons.wikimedia.org/wiki/File:Chicken_Egg_without_'
+              'Eggshell_5859.jpg | License URL (if available):http://commons.'
+              'wikimedia.org/wiki/'
+              'Commons:GNU_Free_Documentation_License,_version_1.2'),
+            license_format('{}, {} {}, <i>{}</i>, {}, {},'
+                           ' accessed {}, &lt;{}&gt;{}'),
+            web_title=3, web_uri=7),
+    BibType('Image with Creator (Screen Name)',
+            _('Image with Creator (Screen Name)'),
+            _('Screen Name or User Name:Dschwen | Year Created:2009 |'
+              'Title or Description:Looking north from Chicago \'L\' station |'
+              'Format:Photo | Sponsor or Orginisation:Wikimedia Commons |'
+              'Accessed:*datenow | URL:http://commons.wikimedia.org/wiki/File:'
+              'CTA_Night.jpg | License URL (if available):http://creativecommons.'
+              'org/licenses/by-sa/4.0/deed.en'),
+            license_format('{} {}, <i>{}</i>, {}, {}, accessed {}, &lt;{}&gt;{}'),
+            web_title=2, web_uri=6),
+    BibType('Image without Creator', _('Image without Creator'),
+            _('Title or Description:OLPC XO Laptop with Screen Twisted |'
+              'Year Created:n.d. | Format:Photo |'
+              'Sponsor or Orginisation:One Laptop Per Child |'
+              'Accessed:*datenow | URL:http://one.laptop.org/sites/default/files/'
+              'hardware-left-side-view.png | License URL (if available):'),
+            license_format('<i>{}</i> {}, {}, {}, accessed {}, &lt;{}&gt;{}'),
+            web_title=0, web_uri=5),
+    BibType('Website with Author', _('Website with Author'),
+            _('Last Name:Lesinski | First Name Initial:K | Last Update:2014 |'
+              'Title of Webpage:MozJPEG 3.0 |'
+              'Sponsor or Orginisation:Performance Calendar | Accessed:*datenow |'
+              'URL:http://calendar.perfplanet.com/2014/mozjpeg-3-0/'),
+            basic_format('{}, {} {}, <i>{}</i>, {}, accessed {}, &lt;{}&gt;'),
+            web_title=3, web_uri=6),
+    BibType('Website by Organisation', _('Website by Organisation'),
+            _('Name of Organisation:Sugar Labs | Last Update:2010 |'
+              'Title of Webpage:Sugar Labs-learning software for children |'
+              'Sponsor or Orginisation:Sugar Labs |'
+              'Accessed:*datenow | URL:http://sugarlabs.org/'),
+            basic_format('{} {}, <i>{}</i>, {}, accessed {}, &lt;{}&gt;'),
+            web_title=2, web_uri=5),
+    BibType('Website without Author', _('Website without Author'),
+            _('Title of Webpage:Avocado Jackpot | Year Created:2014 |'
+              'Sponsor or Orginisation:Reddit | Accessed:*datenow |'
+              'URL:http://www.reddit.com/r/food/comments/2qnbpc/avocado_jackpot/'),
+            basic_format('<i>{}</i> {}, {}, accessed {}, &lt;{}&gt;'),
+            web_title=0, web_uri=4) \
+])
 
 def place_format(string, index):
     def closure(values):

@@ -1,4 +1,4 @@
-# Copyright (C) 2014-15 Sam Parkinson
+# Copyright 2014-2016 Sam Parkinson
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,6 +35,10 @@ from sugar3.activity.widgets import StopButton
 from sugar3.graphics import style
 from sugar3.graphics.icon import Icon
 
+from sugar3.datastore import datastore
+from sugar3.graphics.objectchooser import ObjectChooser
+from sugar3.graphics.objectchooser import FILTER_TYPE_ACTIVITY
+
 try:
     from sugar3.activity.activity import get_bundle, launch_bundle
 except ImportError:
@@ -48,6 +52,7 @@ except ImportError:
 
 from add_button import AddToolButton
 from add_window import EntryWindow
+from browsewindow import BrowseImportWindow
 from bib_types import ALL_TYPES, ALL_TYPE_NAMES
 from main_list import MainList
 
@@ -89,6 +94,12 @@ class BibliographyActivity(activity.Activity):
         add_button.connect('add-type', self.__add_type_cb)
         toolbar_box.toolbar.insert(add_button, -1)
         add_button.show()
+
+        browse = ToolButton('export-as-abiword')
+        browse.set_tooltip(_('Add web pages from Browse instance'))
+        browse.connect('clicked', self.__import_from_browse_cb)
+        toolbar_box.toolbar.insert(browse, -1)
+        browse.show()
    
         separator = Gtk.SeparatorToolItem()
         separator.props.draw = False
@@ -117,18 +128,14 @@ class BibliographyActivity(activity.Activity):
 
         self._empty_message = EmptyMessage()
 
-        self._overlay = Gtk.Overlay()
-        self._overlay.add(self._empty_message)
+        self.set_canvas(self._empty_message)
         self._empty_message.show()
-        self.set_canvas(self._overlay)
-        self._overlay.show()
 
         self._collab.setup()
 
     def add_item(self, text, type_, data):
         self._empty_message.hide()
-        self._overlay.remove(self._overlay.get_child())
-        self._overlay.add(self._main_sw)
+        self.set_canvas(self._main_sw)
         self._main_sw.show()
         self._main_list.show()
         self._main_list.add(text, type_, data)
@@ -151,13 +158,38 @@ class BibliographyActivity(activity.Activity):
     def __add_type_cb(self, add_button, type_):
         window = EntryWindow(ALL_TYPES[type_], self)
         window.connect('save-item', self.__save_item_cb)
-        self._overlay.add_overlay(window)
         window.show()
     
     def __save_item_cb(self, window, *args):
         self.add_item(*args)
         window.hide()
-        self._overlay.remove(window)
+        self._collab.post(dict(
+            action='add_item',
+            args=args
+        ))
+        window.destroy()
+
+    def __import_from_browse_cb(self, button):
+        chooser = ObjectChooser(parent=self,
+                                what_filter='org.laptop.WebActivity',
+                                filter_type=FILTER_TYPE_ACTIVITY)
+        result = chooser.run()
+
+        if result == Gtk.ResponseType.ACCEPT:
+            logging.debug('ObjectChooser: %r' % chooser.get_selected_object())
+            jobject = chooser.get_selected_object()
+            if jobject and jobject.file_path:
+                with open(jobject.file_path) as f:
+                    data = json.load(f)
+                window = BrowseImportWindow(data, self)
+                window.connect('save-item', self.__save_item_importer_cb)
+                window.show()
+
+        chooser.destroy()
+        del chooser
+
+    def __save_item_importer_cb(self, window, *args):
+        self.add_item(*args)
         self._collab.post(dict(
             action='add_item',
             args=args
@@ -167,14 +199,12 @@ class BibliographyActivity(activity.Activity):
         previous_values = json.loads(json_string)
         window = EntryWindow(ALL_TYPES[type_], self, previous_values)
         window.connect('save-item', tree_view.edited_row_cb)
-        self._overlay.add_overlay(window)
         window.show()
 
     def __deleted_row_cb(self, tree_view, *row):
         if len(tree_view.get_model()) == 0:
             self._main_list.hide()
-            self._overlay.remove(self._overlay.get_child())
-            self._overlay.add(self._empty_message)
+            self.set_canvas(self._empty_message)
             self._empty_message.show()
 
     def __key_press_event_cb(self, scrolled_window, event):
@@ -321,8 +351,7 @@ class BibliographyActivity(activity.Activity):
         if len(l) > 0:
             self._main_list.load_json(l)
             self._empty_message.hide()
-            self._overlay.remove(self._empty_message)
-            self._overlay.add(self._main_sw)
+            self.set_canvas(self._main_sw)
             self._main_sw.show()
             self._main_list.show()
 
