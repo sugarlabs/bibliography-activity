@@ -29,10 +29,21 @@ from gi.repository import WebKit2
 from sugar3.graphics import style
 from sugar3.graphics.toolbutton import ToolButton
 from sugar3.graphics.style import GRID_CELL_SIZE
+from sugar3.activity.activity import launch_bundle
+from sugar3.datastore import datastore
 from popwindow import PopWindow
 
 from add_window import EntryWidget
 from bib_types import WEB_TYPES, ALL_TYPES
+
+
+HELP_TEXT = _( \
+'''This Browse entry has no <i>bookmarks</i>.  You need to bookmark the pages
+that you want to add to your bibliography.
+
+Bookmark these pages by opening the Browse journal entry, and clicking
+the <i>star</i> icon.  Remember to close Browse before importing it into
+Bibliography activity, so that the bookmarks are saved!''')
 
 
 class BrowseImportWindow(PopWindow):
@@ -42,15 +53,18 @@ class BrowseImportWindow(PopWindow):
     Args:
         data (dict): JSON decoded browse activity data
         toplevel (Gtk.Window): toplevel window
+        jobject: jobject from object chooser
     '''
 
     save_item = GObject.Signal('save-item', arg_types=[str, str, str])
+    try_again = GObject.Signal('try-again', arg_types=[object])
 
-    def __init__(self, data, toplevel):
+    def __init__(self, data, toplevel, jobject):
         PopWindow.__init__(self, transient_for=toplevel)
         self.props.size = PopWindow.FULLSCREEN
         w, h = PopWindow.FULLSCREEN
         self._toplevel = toplevel
+        self._jobject = jobject
 
         self._links = data.get('shared_links', [])
         if not self._links:
@@ -92,6 +106,33 @@ class BrowseImportWindow(PopWindow):
 
     def _show_howto_copy(self):
         self.get_title_box().props.title = _('Learn to Bookmark in Browse')
+
+        l = Gtk.Label()
+        l.set_markup('<big>{}</big>'.format(HELP_TEXT))
+        self.add_view(l)
+        l.show()
+
+        metadata = self._jobject.get_metadata()
+        launch = Gtk.Button(
+            label=_('Open "%s" in Browse and Add Bookmarks!') % metadata.get('title'))
+        self.add_view(launch, fill=False)
+        launch.connect('clicked', self.__launch_clicked_cb)
+        launch.show()
+
+        self._try_again = Gtk.Button(
+            label=_('I added the bookmarks, let\'s try again'))
+        self.add_view(self._try_again, fill=False)
+        self._try_again.connect('clicked', self.__try_again_clicked_cb)
+
+    def __launch_clicked_cb(self, button):
+        launch_bundle(bundle_id='org.laptop.WebActivity',
+                      object_id=self._jobject.object_id)
+        self._try_again.show()
+
+    def __try_again_clicked_cb(self, button):
+        # Need to refresh the jobject, as the file probably changed
+        new_jobject = datastore.get(self._jobject.object_id)
+        self.try_again.emit(new_jobject)
 
     def next_link(self):
         '''

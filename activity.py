@@ -178,15 +178,24 @@ class BibliographyActivity(activity.Activity):
         if result == Gtk.ResponseType.ACCEPT:
             logging.debug('ObjectChooser: %r' % chooser.get_selected_object())
             jobject = chooser.get_selected_object()
-            if jobject and jobject.file_path:
-                with open(jobject.file_path) as f:
-                    data = json.load(f)
-                window = BrowseImportWindow(data, self)
-                window.connect('save-item', self.__save_item_importer_cb)
-                window.show()
+            self._load_browse(jobject)
 
         chooser.destroy()
         del chooser
+
+    def __try_again_cb(self, window, jobject):
+        window.hide()
+        window.destroy()
+        self._load_browse(jobject)
+
+    def _load_browse(self, jobject):
+        if jobject and jobject.file_path:
+            with open(jobject.file_path) as f:
+                data = json.load(f)
+            window = BrowseImportWindow(data, self, jobject)
+            window.connect('save-item', self.__save_item_importer_cb)
+            window.connect('try-again', self.__try_again_cb)
+            window.show()
 
     def __save_item_importer_cb(self, window, *args):
         self.add_item(*args)
