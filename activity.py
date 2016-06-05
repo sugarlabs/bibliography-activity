@@ -95,8 +95,8 @@ class BibliographyActivity(activity.Activity):
         toolbar_box.toolbar.insert(add_button, -1)
         add_button.show()
 
-        browse = ToolButton('export-as-abiword')
-        browse.set_tooltip(_('Add web pages from Browse instance'))
+        browse = ToolButton('import-browse')
+        browse.set_tooltip(_('Add Web Pages from Browse Entry'))
         browse.connect('clicked', self.__import_from_browse_cb)
         toolbar_box.toolbar.insert(browse, -1)
         browse.show()
